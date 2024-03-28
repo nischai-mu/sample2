@@ -3,4 +3,8 @@ log test
 git revert test
 pull
 heaD~1
+<<<<<<< HEAD
 hello nischai
+=======
+head~2
+>>>>>>> parent of f0998d2 (Revert "change1")
