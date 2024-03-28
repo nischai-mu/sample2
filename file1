@@ -3,4 +3,3 @@ log test
 git revert test
 pull
 heaD~1
-head~2
