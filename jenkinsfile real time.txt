@@ -1,0 +1,428 @@
+buildSuccess = true
+
+Master_Build_ID = "1.0.${env.BUILD_NUMBER}"
+grpId = "com.tfs.dp"
+artId = "cdr-pipeline"
+packageType = "jar"
+artifactName = "${artId}-${Master_Build_ID}.${packageType}"
+archiveLocation = "./build/libs/dp2-stream-processor_sanity-0.0.1-SNAPSHOT.jar"
+hostList=""
+
+mavenVersion="apache-maven-3.3.3"
+nodejsVersion="node-v4.4.6-linux-x64"
+grailsVersion="grails-2.5.0"
+gradleVersion="gradle-2.3"
+
+properties([[$class: 'ScannerJobProperty', doNotScan: false], disableConcurrentBuilds(), [$class: 'JobRestrictionProperty']])
+node
+{
+	env.JAVA_HOME = "${env.jdk8_home}"
+	sh "${env.JAVA_HOME}/bin/java -version"
+	echo "Current branch <${env.BRANCH_NAME}>"
+	def workspace = env.WORKSPACE
+	
+	stage('Preparation') 
+	{
+	    cleanWs()
+		executeCheckout() 
+		pom = readMavenPom file: "pom.xml"
+		grpId = pom.groupId
+		artId = pom.artifactId
+		packageType = pom.packaging
+		//hostList = readJSON file: './hosts.json'
+	}
+	if(env.CHANGE_ID)
+	{
+		stage('commit')
+		{
+			echo "pull request detected"
+			buildSuccess = executeBuild()
+			echo "buildSuccess = ${buildSuccess}"
+			validateBuild(buildSuccess)
+		}
+		/*if(currentBuild.result != 'FAILURE')
+		{
+			stage('Code Coverage'){
+                                sh "/opt/${mavenVersion}/bin/mvn -Dhttp.proxyHost=proxy-grp1.lb-priv.sv2.247-inc.net -Dhttp.proxyPort=3128 test"
+			}
+			stage('Sonar Analysis') 
+			{
+				withSonarQubeEnv('SonarServer')
+				{
+					//sh "cd $WORKSPACE;${mvnHome}/bin/mvn -Dhttp.proxyHost=proxy-grp1.lb-priv.sv2.247-inc.net -Dhttp.proxyPort=3128 sonar:sonar"
+					sh "/opt/${mavenVersion}/bin/mvn -Dhttp.proxyHost=proxy-grp1.lb-priv.sv2.247-inc.net -Dhttp.proxyPort=3128 -Dhttps.proxyHost=proxy-grp1.lb-priv.sv2.247-inc.net -Dhttps.proxyPort=3128 -Dhttp.proxyPort=3128 sonar:sonar"
+				}
+			}
+			stage("Quality Gate") 
+			{
+				//Following line handles sonarserver's slow response
+				timeout(time: 1, unit: 'HOURS')
+				{
+					def qg = waitForQualityGate()
+					if (qg.status =='ERROR')
+					{
+						error "Pipeline aborted due to quality gate failure: ${qg.status}"
+						currentBuild.result ='FAILURE'
+					}
+				}
+			}
+		}*/
+	}
+	if(!env.CHANGE_ID)
+	{
+		stage('sanity')
+		{
+			echo "push detected"
+			buildSuccess = executeBuild()
+			echo "buildSuccess = ${buildSuccess}"
+			validateBuild(buildSuccess)
+		}
+		/*if(currentBuild.result != 'FAILURE')
+		{
+			stage('Code Coverage'){
+                                sh "/opt/${mavenVersion}/bin/mvn -Dhttp.proxyHost=proxy-grp1.lb-priv.sv2.247-inc.net -Dhttp.proxyPort=3128 test"
+			}
+			stage('Sonar Analysis') 
+			{
+				withSonarQubeEnv('SonarServer')
+				{
+				    	//sh "cd $WORKSPACE;${mvnHome}/bin/mvn -Dhttp.proxyHost=proxy-grp1.lb-priv.sv2.247-inc.net -Dhttp.proxyPort=3128 sonar:sonar"
+					sh "/opt/${mavenVersion}/bin/mvn -Dhttp.proxyHost=proxy-grp1.lb-priv.sv2.247-inc.net -Dhttp.proxyPort=3128 -Dhttps.proxyHost=proxy-grp1.lb-priv.sv2.247-inc.net -Dhttps.proxyPort=3128 -Dhttp.proxyPort=3128 sonar:sonar"
+					echo "build result at this stage = ${currentBuild.result}"
+				    
+				}
+			}
+			stage("Quality Gate") 
+			{
+				//Following line handles sonarserver's slow response
+				timeout(time: 1, unit: 'HOURS')
+				{
+					def qg = waitForQualityGate()
+					if (qg.status =='ERROR')
+					{
+						error "Pipeline aborted due to quality gate failure: ${qg.status}"
+						currentBuild.result ='FAILURE'
+					}
+				}
+			}
+			
+			//stage('publish Test report to Jenkins')
+			//{
+			  //  sh "ls ${env.WORKSPACE}/build/reports/tests/test"
+			//	publishHTML([allowMissing: false, alwaysLinkToLastBuild: false, keepAll: false, reportDir: "${env.WORKSPACE}/build/reports/tests/test", reportFiles: 'index.html', reportName: 'Test Report',  reportTitles: 'report'])
+			  //  echo "build result at this stage = ${currentBuild.result}"
+			    
+			//}
+			//sh 'cp ./build/libs/*.jar ./app.jar'
+			//stash includes: 'Dockerfile, app.jar, application.yaml, logback.xml', name: 'docker_stash'
+			//echo "build result at this stage = ${currentBuild.result}"
+		}*/
+			
+		
+		if(currentBuild.result != 'FAILURE')
+		{
+			stage("Artifacts upload to nexus")
+			{
+				
+				UploadArtifactToNexus()
+
+			}	
+			
+			
+			
+		}
+	}
+}
+/*if(!env.CHANGE_ID && currentBuild.result != 'FAILURE')
+{
+    node('jenkins_centos7')
+    {
+        unstash 'docker_stash'
+        sh "ls"
+		stage('Docker image build and upload to nexus')
+		{
+			docker.withRegistry('http://nexus.cicd.sv2.247-inc.net:5000', 'nexus-admin')
+			{
+                def customImage = docker.build("stream-service:${env.BUILD_ID}")
+                customImage.push()
+            }
+		}
+	}
+}*/
+if(!env.CHANGE_ID)
+{	
+    buildApprovalQA = ""
+    buildApprovalSTABLE = ""
+    buildApprovalPRE_PROD_STAGE =
+    buildApprovalPROD = ""
+	timeout(time: 2, unit: 'DAYS') 
+	{
+		buildApprovalQA = getBuildPromotionApproval("QA")
+	}
+	node
+	{
+		stage('QA')
+		{
+			if( buildApprovalQA != "SKIP" )
+			{
+				promote("qa", artifactName, grpId, artId, Master_Build_ID);
+				//deployer("${hostList.QA}")
+			}
+			else echo "stage skipped"
+		}
+	}
+	/*timeout(time: 2, unit: 'DAYS')
+	{
+		 buildApprovalSTABLE = getBuildPromotionApproval("STABLE")
+	}
+	node
+	{
+		stage('STABLE')
+		{
+			if( buildApprovalSTABLE != "SKIP" )
+			{
+				promote("stable", artifactName, grpId, artId, Master_Build_ID);
+				deployer("${hostList.STABLE}")
+			}
+			else echo "stage skipped"
+		}
+	}
+	timeout(time: 2, unit: 'DAYS') 
+	{
+		buildApprovalPRE_PROD_STAGE = getBuildPromotionApproval("PRE_PROD_STAGE")
+	}
+	node
+	{
+		stage('PRE_PROD_STAGE')
+		{
+			if( buildApprovalPRE_PROD_STAGE != "SKIP" )
+			{
+				promote("pre-prod-stage", artifactName, grpId, artId, Master_Build_ID);
+			}
+			else echo "stage skipped"
+		}
+	}
+	timeout(time: 2, unit: 'DAYS') 
+	{
+		buildApprovalPROD = getBuildPromotionApproval("PROD")
+	}
+	node
+	{
+		stage('PROD')
+		{
+			if( buildApprovalPROD != "SKIP" )
+			{
+				promote("production", artifactName, grpId, artId, Master_Build_ID);
+			}
+			else echo "stage skipped"
+		}
+	}*/
+}
+def boolean executeBuild()
+{
+	def result = true
+	def branchName = env.BRANCH_NAME
+	echo "branch = ${branchName} Master_Build_ID=${Master_Build_ID}"
+			try 
+			{
+				sh '''	export JAVA_HOME=${jdk8_home}
+				export PATH=${jdk8_home}/bin:$PATH
+				mavenVersion='''+mavenVersion+'''
+				nodejsVersion='''+nodejsVersion+'''
+				grailsVersion='''+grailsVersion+'''
+				gradleVersion='''+gradleVersion+'''
+				
+				export PATH=$PATH:/opt/${mavenVersion}/bin
+				export PATH=/opt/${nodejsVersion}/bin:$PATH
+				export PATH=/var/tellme/jenkins/tools/sbt/bin:$PATH
+				export PATH=/opt/${grailsVersion}/bin:$PATH
+				export PATH=/opt/${gradleVersion}/bin:$PATH
+				BRANCH='''+branchName+'''
+				#ADD YOUR BUILD STEPS HERE----------------------------------
+				#/opt/${gradleVersion}/bin/gradle build -x test
+				export http_proxy=http://proxy-grp1.lb-priv.sv2.247-inc.net:3128
+                                export https_proxy=http://proxy-grp1.lb-priv.sv2.247-inc.net:3128
+                              #  /opt/${mavenVersion}/bin/mvn -Dhttp.proxyHost=proxy-grp1.lb-priv.sv2.247-inc.net -Dhttp.proxyPort=3128 -Dhttps.proxyHost=proxy-grp1.lb-priv.sv2.247-inc.net -Dhttps.proxyPort=3128 clean package
+	                                /opt/${mavenVersion}/bin/mvn -Dhttp.proxyHost=proxy-grp1.lb-priv.sv2.247-inc.net -Dhttp.proxyPort=3128 -Dhttps.proxyHost=proxy-grp1.lb-priv.sv2.247-inc.net -Dhttps.proxyPort=3128 clean install -Ptfs-prod -Pdataflow-runner -DskipTests
+				#-----------------------------------------------------------
+				'''
+				echo "Build Success...."
+				result = true
+			} 
+			catch(Exception ex) 
+			{
+				 echo "Build Failed...."
+				 echo "ex.toString() - ${ex.toString()}"
+				 echo "ex.getMessage() - ${ex.getMessage()}"
+				 echo "ex.getStackTrace() - ${ex.getStackTrace()}"
+				 result = false
+			} 
+		
+	
+	echo "result - ${result}"
+	result
+}
+
+def executeCheckout()
+{
+  //Get some code from a GitHub repository
+  checkout scm
+}
+
+def validateBuild(def buildStatus)
+{
+	if (buildStatus) 
+	{
+		  currentBuild.result = 'SUCCESS'
+	}
+	else
+	{
+		currentBuild.result = 'FAILURE'
+		 error "build failed!"
+	}
+	
+}
+
+/*
+def uploadArtifactToNexus(Master_Build_ID,artId,archiveLocation,artifactName) {
+sh  '''
+				    mavenVersion='''+mavenVersion+'''
+				    cd ${WORKSPACE}/
+						ls
+						REPO_URL=${NEXUS_REPO_URL_DEFAULT}
+						REPO_ID=${NEXUS_REPO_ID_DEFAULT}
+						GRP_ID='''+grpId+'''
+						ART_ID='''+artId+'''
+						PACKAGE_TYPE='''+packageType+'''
+						ARTIFACT_NAME='''+artifactName+'''
+						Master_Build_ID='''+Master_Build_ID+'''
+						#ZIP_FILE=$(ls target/$ART_ID*.$PACKAGE_TYPE)
+						ZIP_FILE='''+archiveLocation+'''
+						/opt/${mavenVersion}/bin/mvn -B deploy:deploy-file -Durl=$REPO_URL -DrepositoryId=$REPO_ID -DgroupId=$GRP_ID -DartifactId=$ART_ID -Dversion=$Master_Build_ID -Dfile=$ZIP_FILE -Dpackaging=$PACKAGE_TYPE -DgeneratePom=true -e
+						/opt/${mavenVersion}/bin/mvn -B deploy:deploy-file -Durl=$REPO_URL -DrepositoryId=$REPO_ID -DgroupId=$GRP_ID -DartifactId=$ART_ID -Dversion=latest -Dfile=$ZIP_FILE -Dpackaging=$PACKAGE_TYPE -DgeneratePom=true -e
+			
+					echo "debug 1"
+				''' }
+*/
+def getBuildPromotionApproval(def toStage)
+{
+	def userInput= ""
+	try{
+		userInput = input (message: "Promote to ${toStage} environment", parameters: [choice(choices: ['YES ', 'SKIP'], description: "Choices to promote the build to ${toStage} environment", name: 'PROMOTION')])
+		echo ("proceed promotion = " + userInput)
+	}
+	catch(Exception ex)
+	{
+		echo "Aborting this build! no more promotions can be made! "
+		try
+		{
+			input (message: 'Proceed abortion of the build?')
+			exit 0
+		}
+		catch(Exception e){
+			echo "abort cancelled!"
+		}
+	
+	}
+	userInput
+}
+
+def promote(def promoteTo, def artifactName, def grpId, def artId, def artVersion)
+{
+	sh 	'''	export _JAVA_OPTIONS=-Djava.io.tmpdir=/var/tellme/jenkins/tmp
+			mavenVersion='''+mavenVersion+'''
+			WS_LOCATION=$(pwd)
+			export JAVA_HOME=${jdk7_home}
+			ARTIFACTS_FILE='''+artifactName+'''
+			GRP_ID='''+grpId+'''
+			GRP_ID_with_slash=$(echo $GRP_ID | sed "s/\\./\\//g")
+			ART_ID='''+artId+'''
+			PACKAGE_TYPE='''+packageType+'''
+			promote_to='''+promoteTo+'''
+			ARTIFACTS_VERSION='''+artVersion+'''
+			if [ "$promote_to" = "qa" ]; then
+				ARTIFACT_URL=${NEXUS_REPO_URL_DEFAULT}/$GRP_ID_with_slash/$ART_ID/${ARTIFACTS_VERSION}/${ARTIFACTS_FILE}
+				REPO_URL=${NEXUS_REPO_URL_QA}
+				REPO_ID=${NEXUS_REPO_ID_QA}
+				REPO_PATH="promoted"
+					
+			elif [ "$promote_to" = "stable" ]; then
+				ARTIFACT_URL=${NEXUS_REPO_URL_QA}/$GRP_ID_with_slash/$ART_ID/${ARTIFACTS_VERSION}/${ARTIFACTS_FILE}
+				REPO_URL=${NEXUS_REPO_URL_STABLE}
+				REPO_ID=${NEXUS_REPO_ID_STABLE}
+				REPO_PATH="promoted"
+			elif [ "$promote_to" = "pre-prod-stage" ]; then
+				ARTIFACT_URL=${NEXUS_REPO_URL_STABLE}/$GRP_ID_with_slash/$ART_ID/${ARTIFACTS_VERSION}/${ARTIFACTS_FILE}
+				REPO_URL=${NEXUS_REPO_URL_PRE_PROD_STAGE}
+				REPO_ID=${NEXUS_REPO_ID_PRE_PROD_STAGE}
+				REPO_PATH="promoted"
+			elif [ "$promote_to" = "production" ]; then
+				ARTIFACT_URL=${NEXUS_REPO_URL_PRE_PROD_STAGE}/$GRP_ID_with_slash/$ART_ID/${ARTIFACTS_VERSION}/${ARTIFACTS_FILE}
+				REPO_URL=${NEXUS_REPO_URL_PRODUCTION}
+				REPO_ID=${NEXUS_REPO_ID_PRODUCTION}
+				REPO_PATH="promoted"
+			fi
+			
+			wget $ARTIFACT_URL --proxy=off > /dev/null 2>&1
+			echo "#############################################################################################"
+			#echo "Update build $PACKAGE_TYPE and uploading to nexus..."
+			WS_LOCATION=$(pwd)
+			#echo "create $PACKAGE_TYPE file"
+			ZIP_FILE=$WS_LOCATION/${ARTIFACTS_FILE}
+			/opt/${mavenVersion}/bin/mvn deploy:deploy-file -Durl=$REPO_URL -DrepositoryId=$REPO_ID -DgroupId=$GRP_ID -DartifactId=$ART_ID -Dversion=$REPO_PATH -Dpackaging=$PACKAGE_TYPE -Dfile=$ZIP_FILE -DgeneratePom=true -e > /dev/null 2>&1
+			/opt/${mavenVersion}/bin/mvn deploy:deploy-file -Durl=$REPO_URL -DrepositoryId=$REPO_ID -DgroupId=$GRP_ID -DartifactId=$ART_ID -Dversion=$ARTIFACTS_VERSION -Dpackaging=$PACKAGE_TYPE -Dfile=$ZIP_FILE -DgeneratePom=true -e > /dev/null 2>&1
+			'''
+}
+
+def UploadArtifactToNexus()
+{
+	def result = true
+	def branchName = env.BRANCH_NAME
+	echo "branch = ${branchName}"
+	try
+	{
+		sh '''	export JAVA_HOME=${jdk8_home}
+				export PATH=${jdk8_home}/bin:$PATH
+				REPO_URL=${NEXUS_REPO_URL_DEFAULT}
+				REPO_ID=${NEXUS_REPO_ID_DEFAULT}
+				/opt/apache-maven-3.3.9/bin/mvn -B -Durl=$REPO_URL -DrepositoryId=$REPO_ID -DproxyHost=proxy-grp1.lb-priv.sv2.247-inc.net -DproxyPort=3128 clean deploy -U -Ptfs-prod -Pdataflow-runner -DskipTests
+		'''
+		echo "Build Success...."
+		result = true
+	}
+	catch(Exception ex)
+	{
+		 echo "Build Failed...."
+		 echo "ex.toString() - ${ex.toString()}"
+		 echo "ex.getMessage() - ${ex.getMessage()}"
+		 echo "ex.getStackTrace() - ${ex.getStackTrace()}"
+		 result = false
+	}
+	result
+}
+
+
+
+def deployer(def hosts)
+{
+	isReplay = true
+	while(isReplay)
+	{
+	    lastIndexToTrim = hosts.length() - 1
+	    hostsToDeploy = hosts.substring(1,lastIndexToTrim)
+	    hostsToDeploy = hostsToDeploy.replaceAll("\\s","")
+	    def jobDetails = build job: 'dae_cicd/chef-deployer', parameters: [string(name: 'hostList', value: "${hostsToDeploy}"), string(name: 'chefOption', value: '-h')], propagate: false
+	    echo "${jobDetails.getResult()}"
+	    if(jobDetails.getResult() != "FAILURE")
+	    {
+		isReplay = false
+	    }
+            else
+	    {
+		timeout(time: 2, unit: 'DAYS') 
+		{
+			input (message: "Deployment failed! Do you want to retry?", name: 'deployment_replay')
+		}
+	    }
+	}
+}
