@@ -18,4 +18,4 @@
 - [x] Write README
 - [ ] Add screenshots
 - [ ] Publish project
-
+- [ ] Document everything
