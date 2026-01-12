@@ -1,0 +1,59 @@
+#!/bin/bash
+# Update package list and install Apache
+dnf update -y
+dnf install -y httpd -y
+
+# Start and enable Apache service
+systemctl start httpd
+systemctl enable httpd
+
+# Set permissions for Apache root directory
+chown -R ec2-user:ec2-user /var/www/html
+
+# Fetch the Availability Zone using IMDSv2
+TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+AZ=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" -s http://169.254.169.254/latest/meta-data/placement/availability-zone)
+
+# Create a custom index.html page
+cat <<EOF > /var/www/html/index.html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome to My Custom Apache Server</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            text-align: center;
+            padding: 50px;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+            display: inline-block;
+        }
+        h1 {
+            color: #333;
+        }
+        p {
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Welcome to My Custom Apache Web Server!</h1>
+        <p>Hosted on an Amazon Linux 2023 EC2 Instance.</p>
+        <p>This page was deployed automatically using AWS User Data.</p>
+        <p><strong>Availability Zone:</strong> $AZ</p>
+    </div>
+</body>
+</html>
+EOF
+
+# Restart Apache to apply changes
+systemctl restart httpd
